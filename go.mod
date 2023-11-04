@@ -10,6 +10,8 @@ require (
 	github.com/go-resty/resty/v2 v2.10.0
 )
 
+require github.com/dustin/go-humanize v1.0.1 // indirect
+
 require (
 	github.com/alecthomas/chroma v0.10.0 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
@@ -19,6 +21,7 @@ require (
 	github.com/containerd/console v1.0.4-0.20230313162750-1ae8d489ac81 // indirect
 	github.com/dlclark/regexp2 v1.4.0 // indirect
 	github.com/gorilla/css v1.0.0 // indirect
+	github.com/jmoiron/jsonq v0.0.0-20150511023944-e874b168d07e
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/mattn/go-isatty v0.0.18 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect

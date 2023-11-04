@@ -4,14 +4,17 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/filepicker"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/go-resty/resty/v2"
 )
 
 const listHeight = 14
@@ -22,8 +25,7 @@ var (
 	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("170"))
 	paginationStyle   = list.DefaultStyles().PaginationStyle.PaddingLeft(4)
 	helpStyle         = list.DefaultStyles().HelpStyle.PaddingLeft(4).PaddingBottom(1).Foreground(lipgloss.Color("241"))
-	quitTextStyle     = lipgloss.NewStyle().Margin(1, 0, 2, 4).BorderStyle(lipgloss.NormalBorder()).
-				BorderForeground(lipgloss.Color("63"))
+	quitTextStyle     = lipgloss.NewStyle()
 )
 
 func (i Faction) FilterValue() string { return "" }
@@ -59,9 +61,12 @@ type model struct {
 	step      int
 	callsign  string
 	textInput textinput.Model
+	client    *resty.Client
+	faction   Faction
+	token     string
 }
 
-func newModel(factions []Faction) (*model, error) {
+func newModel(client *resty.Client, factions []Faction) (*model, error) {
 
 	items := []list.Item{}
 	for _, f := range factions {
@@ -90,7 +95,10 @@ func newModel(factions []Faction) (*model, error) {
 		BorderForeground(lipgloss.Color("62")).
 		PaddingRight(2)
 	vp.MouseWheelEnabled = true
-	return &model{viewport: vp, list: l, step: 0, textInput: ti}, nil
+
+	fp := filepicker.New()
+	fp.CurrentDirectory, _ = os.UserHomeDir()
+	return &model{viewport: vp, list: l, step: 0, textInput: ti, client: client}, nil
 }
 
 func (m model) helpView() string {
@@ -115,6 +123,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateList(msg)
 		case 2:
 			return m.updateDetails(msg)
+		case 3:
+			return m.updateSave(msg)
 		default:
 			return m, nil
 
@@ -159,7 +169,7 @@ func (m model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			i, ok := m.list.SelectedItem().(Faction)
 			if ok {
 				m.step = 2
-
+				m.faction = i
 				m.choice = format_faction(i, m.viewport.Width-4)
 				renderer, err := glamour.NewTermRenderer(
 					glamour.WithAutoStyle(),
@@ -200,6 +210,22 @@ func (m model) updateDetails(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.step = 1
 			return m, nil
 
+		case "enter":
+			m.step = 3
+			token, agent, err := register(m.client, m.callsign, m.faction.Symbol)
+			if err != nil {
+				return m, tea.Quit
+			}
+			homedir, err := os.UserHomeDir()
+			if err != nil {
+				return m, tea.Quit
+			}
+			agentpath := path.Join(homedir, ".spctea", "agents", fmt.Sprintf("%s.json", m.callsign))
+			os.MkdirAll(path.Dir(agentpath), 0777)
+			os.WriteFile(agentpath, []byte(agent), 0666)
+			m.token = token
+			return m, tea.Quit
+
 		default:
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
@@ -209,6 +235,30 @@ func (m model) updateDetails(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
 		return m, cmd
+	default:
+		return m, nil
+	}
+}
+
+func (m model) updateSave(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch keypress := msg.String(); keypress {
+		case "ctrl+c", "q", "esc":
+			m.quitting = true
+			return m, tea.Quit
+
+		case "backspace":
+			m.step = 2
+			return m, nil
+
+		case "enter":
+			m.step = 4
+			return m, tea.Quit
+
+		default:
+			return m, nil
+		}
 	default:
 		return m, nil
 	}
@@ -233,13 +283,16 @@ func (m model) View() string {
 		return "\n" + m.list.View()
 	case 2:
 		return m.viewport.View() + m.helpView()
+	case 3:
+		return quitTextStyle.Width(m.viewport.Width - 8).Render(m.token)
 	}
+
 	return ""
 }
 
-func show_factions(factions []Faction) {
+func show_factions(client *resty.Client, factions []Faction) {
 
-	m, _ := newModel(factions)
+	m, _ := newModel(client, factions)
 
 	if _, err := tea.NewProgram(m, tea.WithMouseAllMotion()).Run(); err != nil {
 		fmt.Println("Error running program:", err)
