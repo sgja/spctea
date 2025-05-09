@@ -10,7 +10,11 @@ require (
 	github.com/go-resty/resty/v2 v2.10.0
 )
 
-require github.com/dustin/go-humanize v1.0.1 // indirect
+require (
+	github.com/dustin/go-humanize v1.0.1 // indirect
+	go.uber.org/multierr v1.11.0 // indirect
+	go.uber.org/zap v1.27.0 // indirect
+)
 
 require (
 	github.com/alecthomas/chroma v0.10.0 // indirect
@@ -41,4 +45,5 @@ require (
 	golang.org/x/sys v0.13.0 // indirect
 	golang.org/x/term v0.13.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
