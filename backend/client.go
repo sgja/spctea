@@ -16,10 +16,15 @@ func GetURL(endpoint string) string {
 	return BaseURL + endpoint
 }
 
-func (c *Client) BuildRequest() *resty.Request {
+func (c *Client) BuildRequestWithAuth() *resty.Request {
 	return c.rc.R().
 		SetHeader("Content-Type", "application/json").
 		SetHeader("Authorization", fmt.Sprintf("Bearer %s", c.token))
+}
+
+func (c *Client) BuildRequest() *resty.Request {
+	return c.rc.R().
+		SetHeader("Content-Type", "application/json")
 }
 
 type Client struct {
@@ -37,7 +42,7 @@ func (c *Client) Register(callsign string, faction string) (string, string, erro
 	if err != nil {
 		return "", "", err
 	}
-	resp, err := c.BuildRequest().
+	resp, err := c.BuildRequestWithAuth().
 		SetBody(string(body)).
 		Post(GetURL("register"))
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"go.uber.org/zap"
 )
 
 var (
@@ -50,6 +51,7 @@ func MainMenu() MainMenuModel {
 }
 
 type MainMenuModel struct {
+	root   *RootModel
 	list   list.Model
 	width  int
 	height int
@@ -62,8 +64,23 @@ func (m MainMenuModel) Init() tea.Cmd {
 func (m MainMenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		if msg.String() == "ctrl+c" {
+		switch keypress := msg.String(); keypress {
+		case "ctrl+c":
 			return m, tea.Quit
+		case "enter":
+			i, ok := m.list.SelectedItem().(item)
+			if ok {
+				switch i.title {
+				case "Register":
+					model, err := newModel(m.root.app)
+					if err != nil {
+						m.root.app.Logger.Error("Error creating register model", zap.Error(err))
+						return m, tea.Quit
+					}
+					m.root.app.Logger.Info("switching")
+					return m.root.SwitchScreen(model)
+				}
+			}
 		}
 	case tea.WindowSizeMsg:
 		m.list.SetSize(msg.Width-5, msg.Height-5)
