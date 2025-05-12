@@ -7,13 +7,15 @@ import (
 	"path"
 	"strings"
 
+	"sgja/spctea/backend"
+	"sgja/spctea/types"
+
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/go-resty/resty/v2"
 	"go.uber.org/zap"
 )
 
@@ -26,15 +28,13 @@ var (
 	quitTextStyle     = lipgloss.NewStyle()
 )
 
-func (i Faction) FilterValue() string { return "" }
-
 type itemDelegate struct{}
 
 func (d itemDelegate) Height() int                             { return 1 }
 func (d itemDelegate) Spacing() int                            { return 0 }
 func (d itemDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
-	i, ok := listItem.(Faction)
+	i, ok := listItem.(types.Faction)
 	if !ok {
 		return
 	}
@@ -52,22 +52,24 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 }
 
 type model struct {
-	logger        *zap.Logger
-	account_token string
-	list          list.Model
-	choice        string
-	quitting      bool
-	viewport      viewport.Model
-	step          int
-	callsign      string
-	textInput     textinput.Model
-	client        *resty.Client
-	faction       Faction
-	token         string
+	app         *backend.App
+	list        list.Model
+	choice      string
+	quitting    bool
+	viewport    viewport.Model
+	callsign_vp viewport.Model
+	step        int
+	callsign    string
+	textInput   textinput.Model
+	faction     types.Faction
+	token       string
 }
 
-func newModel(client *resty.Client, logger *zap.Logger, account_token string, factions []Faction) (*model, error) {
-
+func newModel(app *backend.App) (*model, error) {
+	factions, err := app.SpcClient.ListFactions()
+	if err != nil {
+		return nil, err
+	}
 	items := []list.Item{}
 	for _, f := range factions {
 		items = append(items, f)
@@ -78,6 +80,7 @@ func newModel(client *resty.Client, logger *zap.Logger, account_token string, fa
 	ti.Focus()
 	ti.CharLimit = 156
 	ti.Width = 20
+	ti.PromptStyle = ti.PromptStyle.PaddingLeft(4)
 
 	l := list.New(items, itemDelegate{}, 0, 0)
 	l.Title = "Choose a faction"
@@ -94,7 +97,11 @@ func newModel(client *resty.Client, logger *zap.Logger, account_token string, fa
 		PaddingRight(2)
 	vp.MouseWheelEnabled = true
 
-	return &model{viewport: vp, list: l, step: 0, textInput: ti, client: client, account_token: account_token, logger: logger}, nil
+	callsign_vp := viewport.New(0, 4)
+	callsign_vp.Style = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("170")).PaddingLeft(4)
+	callsign_vp.SetContent("Enter the callsign of your agent")
+
+	return &model{viewport: vp, list: l, step: 0, textInput: ti, app: app, callsign_vp: callsign_vp}, nil
 }
 
 func (m model) helpView() string {
@@ -111,6 +118,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.list.SetSize(msg.Width, msg.Height)
 		m.viewport.Width = msg.Width
 		m.viewport.Height = msg.Height - 1
+		m.callsign_vp.Width = msg.Width
 		return m, nil
 	default:
 		switch m.step {
@@ -166,7 +174,7 @@ func (m model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.step = 0
 
 		case "enter":
-			i, ok := m.list.SelectedItem().(Faction)
+			i, ok := m.list.SelectedItem().(types.Faction)
 			if ok {
 				m.step = 2
 				m.faction = i
@@ -211,10 +219,10 @@ func (m model) updateDetails(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "enter":
 			m.step = 3
-			m.logger.Info("Step 3 entered with", zap.String("callsign", m.callsign), zap.String("symbol", m.faction.Symbol))
-			token, agent, err := register(m.client, m.account_token, m.callsign, m.faction.Symbol)
+			m.app.Logger.Info("Step 3 entered with", zap.String("callsign", m.callsign), zap.String("symbol", m.faction.Symbol))
+			token, agent, err := m.app.SpcClient.Register(m.callsign, m.faction.Symbol)
 			if err != nil {
-				m.logger.Error("failed to register", zap.Error(err))
+				m.app.Logger.Error("failed to register", zap.Error(err))
 				return m, tea.Quit
 			}
 			homedir, err := os.UserHomeDir()
@@ -266,7 +274,7 @@ func (m model) updateSave(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 }
 
-func format_faction(faction Faction) string {
+func format_faction(faction types.Faction) string {
 	text := fmt.Sprintf("# %s\n\n", faction.Name) +
 		fmt.Sprintf("HQ: %s\n\n", faction.Headquarters) +
 		"Traits:\n\n"
@@ -280,7 +288,7 @@ func format_faction(faction Faction) string {
 func (m model) View() string {
 	switch m.step {
 	case 0:
-		return m.textInput.View()
+		return m.callsign_vp.View() + "\n" + m.textInput.View()
 	case 1:
 		return "\n" + m.list.View()
 	case 2:
@@ -290,14 +298,4 @@ func (m model) View() string {
 	}
 
 	return ""
-}
-
-func show_factions(client *resty.Client, logger *zap.Logger, account_token string, factions []Faction) {
-
-	m, _ := newModel(client, logger, account_token, factions)
-
-	if _, err := tea.NewProgram(m, tea.WithAltScreen()).Run(); err != nil {
-		fmt.Println("Error running program:", err)
-		os.Exit(1)
-	}
 }

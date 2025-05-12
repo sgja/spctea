@@ -1,4 +1,4 @@
-module example/hello
+module sgja/spctea
 
 go 1.21.3
 
