@@ -16,7 +16,9 @@ func RootScreen(app *backend.App) RootModel {
 
 	main_menu := MainMenu()
 	rootModel = &main_menu
-	return RootModel{rootModel, app}
+	root := RootModel{rootModel, app}
+	main_menu.root = &root
+	return root
 }
 
 func (m RootModel) Init() tea.Cmd {
