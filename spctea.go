@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"strings"
 
 	"sgja/spctea/backend"
 
@@ -53,7 +54,7 @@ func load_token() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return string(content), nil
+	return strings.Trim(string(content), "\n"), nil
 }
 
 func main() {

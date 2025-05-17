@@ -37,8 +37,7 @@ func NewClient(token string) Client {
 }
 
 func (c *Client) Register(callsign string, faction string) (string, string, error) {
-	agent := types.Agent{Symbol: callsign, Faction: faction}
-	body, err := agent.ToBody()
+	body, err := json.Marshal(map[string]string{"symbol": callsign, "faction": faction})
 	if err != nil {
 		return "", "", err
 	}
